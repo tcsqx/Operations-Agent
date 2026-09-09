@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能OnCall助手</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Markdown 渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <!-- 代码高亮库（可选） -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- 左侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2 class="sidebar-title">智能OnCall助手</h2>
+            </div>
+            
+            <div class="sidebar-content">
+                <button class="new-chat-btn" id="newChatBtn">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    <span>新建对话</span>
+                </button>
+                
+                <div class="chat-history-section">
+                    <div class="history-header">
+                        <span>近期对话</span>
+                    </div>
+                    <div class="chat-history-list" id="chatHistoryList">
+                        <!-- 历史对话列表将在这里动态生成 -->
+                    </div>
+                </div>
+                
+            </div>
+        </aside>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <button class="ai-ops-top-btn" id="aiOpsSidebarBtn">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>AI Ops</span>
+            </button>
+            <div class="chat-container">
+                <div class="welcome-greeting" id="welcomeGreeting">
+                    <p>你好！我是智能Oncall小助手</p>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                </div>
+                
+                <div class="chat-input-container">
+                    <div class="input-group-wrapper">
+                        <div class="input-wrapper">
+                            <input type="text" id="messageInput" placeholder="问问智能OnCall助手" maxlength="1000" class="message-input">
+                            <div class="input-bottom-bar">
+                                <div class="tools-btn-wrapper">
+                                    <button class="tools-btn" id="toolsBtn" title="更多选项">
+                                        <svg class="tools-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                                            <circle cx="19" cy="12" r="1.5" fill="currentColor"/>
+                                            <circle cx="5" cy="12" r="1.5" fill="currentColor"/>
+                                        </svg>
+                                    </button>
+                                    <div class="tools-menu" id="toolsMenu">
+                                        <div class="tools-menu-item" id="uploadFileItem">
+                                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                            <span>上传文件</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="right-actions">
+                                    <div class="mode-selector-wrapper">
+                                        <button class="mode-selector-btn" id="modeSelectorBtn">
+                                            <span id="currentModeText">快速</span>
+                                            <svg class="dropdown-arrow" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                        </button>
+                                        <div class="mode-dropdown" id="modeDropdown">
+                                            <div class="dropdown-header">选择对话方式</div>
+                                            <div class="dropdown-item active" data-mode="quick">
+                                                <div class="dropdown-item-main">
+                                                    <span>快速</span>
+                                                    <span class="badge-new">新</span>
+                                                </div>
+                                                <div class="dropdown-item-sub">快速对话</div>
+                                            </div>
+                                            <div class="dropdown-item" data-mode="stream">
+                                                <div class="dropdown-item-main">
+                                                    <span>流式</span>
+                                                </div>
+                                                <div class="dropdown-item-sub">流式对话</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button class="send-btn-circle" id="sendButton" title="发送">
+                                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="fileInput" accept=".txt,.md,.markdown" style="display: none;">
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- OpsPilot SRE 控制中心模态框 -->
+    <div id="opsPilotModal" class="opspilot-modal" style="display: none;">
+        <div class="opspilot-modal-dialog">
+            <div class="opspilot-modal-header">
+                <div class="opspilot-header-title">
+                    <span class="opspilot-logo-badge">OpsPilot 2.0</span>
+                    <h3>SRE 智能运维中枢</h3>
+                </div>
+                <button class="opspilot-close-btn" id="closeOpsModalBtn">&times;</button>
+            </div>
+            
+            <div class="opspilot-tabs">
+                <button class="opspilot-tab-btn active" data-tab="tab-diagnosis">🚀 故障诊断与报告</button>
+                <button class="opspilot-tab-btn" data-tab="tab-tools">🛠️ 真实运维工具箱</button>
+                <button class="opspilot-tab-btn" data-tab="tab-hitl">🛡️ 人工审批中心 <span class="badge-pending" id="hitlPendingCount" style="display:none;">0</span></button>
+                <button class="opspilot-tab-btn" data-tab="tab-history">📋 任务审计流</button>
+            </div>
+
+            <div class="opspilot-modal-body">
+                <!-- Tab 1: 故障诊断 -->
+                <div class="opspilot-tab-panel active" id="tab-diagnosis">
+                    <div class="ops-section-desc">输入运维告警或现象，OpsPilot 将自动化分解任务、调度探针工具收集事实并生成标准 SRE 根因分析报告。</div>
+                    <div class="diagnosis-input-box">
+                        <textarea id="opsPromptInput" rows="3" placeholder="例如：服务器 CPU 持续超过 90%，请协助排查；或者：8080 端口无法访问，检查服务状态与日志..."></textarea>
+                        <div class="diagnosis-input-actions">
+                            <button class="ops-primary-btn" id="startDiagnosisBtn">一键自动诊断</button>
+                        </div>
+                    </div>
+
+                    <div class="ops-live-card" id="opsLiveCard" style="display: none;">
+                        <div class="ops-live-header">
+                            <span class="ops-status-badge" id="opsLiveStatus">DIAGNOSING</span>
+                            <span id="opsLiveTaskId">Task: task-12345678</span>
+                        </div>
+                        <div class="ops-steps-container" id="opsLiveSteps">
+                            <!-- 动态步骤 -->
+                        </div>
+                    </div>
+
+                    <div class="ops-report-container" id="opsReportContainer" style="display: none;">
+                        <div class="report-header">
+                            <h4>📄 诊断产出报告</h4>
+                            <button class="ops-secondary-btn" id="copyReportBtn">复制报告</button>
+                        </div>
+                        <div class="ops-report-markdown" id="opsReportContent"></div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: 真实运维工具箱 -->
+                <div class="opspilot-tab-panel" id="tab-tools">
+                    <div class="ops-section-desc">已注册的真实底层运维探针与执行器（内置 CommandGuard 拦截与敏感脱敏）：</div>
+                    <div class="tools-grid">
+                        <div class="tool-card" data-tool="server_info">
+                            <div class="tool-card-title">🖥️ server_info</div>
+                            <div class="tool-card-desc">主机基础环境、操作系统架构与运行时间</div>
+                            <div class="tool-card-badge low">Risk: LOW</div>
+                            <button class="tool-run-btn" onclick="window.opsPilot.runDirectTool('server_info', {})">立即探测</button>
+                        </div>
+                        <div class="tool-card" data-tool="cpu_inspector">
+                            <div class="tool-card-title">⚡ cpu_inspector</div>
+                            <div class="tool-card-desc">主机与JVM CPU负载率与系统负载均值</div>
+                            <div class="tool-card-badge low">Risk: LOW</div>
+                            <button class="tool-run-btn" onclick="window.opsPilot.runDirectTool('cpu_inspector', {})">立即探测</button>
+                        </div>
+                        <div class="tool-card" data-tool="memory_inspector">
+                            <div class="tool-card-title">🧠 memory_inspector</div>
+                            <div class="tool-card-desc">物理内存、JVM堆内存消耗与水位报警</div>
+                            <div class="tool-card-badge low">Risk: LOW</div>
+                            <button class="tool-run-btn" onclick="window.opsPilot.runDirectTool('memory_inspector', {})">立即探测</button>
+                        </div>
+                        <div class="tool-card" data-tool="disk_usage">
+                            <div class="tool-card-title">💾 disk_usage</div>
+                            <div class="tool-card-desc">挂载磁盘分区总容量、剩余可用比</div>
+                            <div class="tool-card-badge low">Risk: LOW</div>
+                            <button class="tool-run-btn" onclick="window.opsPilot.runDirectTool('disk_usage', {})">立即探测</button>
+                        </div>
+                        <div class="tool-card" data-tool="process_top">
+                            <div class="tool-card-title">📊 process_top</div>
+                            <div class="tool-card-desc">排查消耗资源排名前列的活跃进程</div>
+                            <div class="tool-card-badge low">Risk: LOW</div>
+                            <button class="tool-run-btn" onclick="window.opsPilot.runDirectTool('process_top', {limit: 5})">查看Top进程</button>
+                        </div>
+                        <div class="tool-card" data-tool="port_check">
+                            <div class="tool-card-title">🔌 port_check</div>
+                            <div class="tool-card-desc">TCP 网络服务端口连通性探测</div>
+                            <div class="tool-card-badge low">Risk: LOW</div>
+                            <button class="tool-run-btn" onclick="window.opsPilot.runDirectTool('port_check', {host:'127.0.0.1', port: 9900})">测试9900端口</button>
+                        </div>
+                    </div>
+                    <div class="tool-result-panel" id="directToolResult" style="display: none;">
+                        <h5>探测结果输出：</h5>
+                        <pre id="directToolOutput"></pre>
+                    </div>
+                </div>
+
+                <!-- Tab 3: 人工审批中心 (HITL) -->
+                <div class="opspilot-tab-panel" id="tab-hitl">
+                    <div class="ops-section-desc">当 Agent 涉及高危变更（如重启服务、修改配置、杀进程）时，触发 Human-In-The-Loop 审批等待：</div>
+                    <div id="hitlListContainer">
+                        <div class="ops-empty-state">当前暂无等待人工审批的工单</div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: 任务审计流 -->
+                <div class="opspilot-tab-panel" id="tab-history">
+                    <div class="ops-section-desc">历史诊断任务流与审计追踪：</div>
+                    <div class="ops-table-container">
+                        <table class="ops-table" id="opsTasksTable">
+                            <thead>
+                                <tr>
+                                    <th>任务编号</th>
+                                    <th>触发内容</th>
+                                    <th>状态</th>
+                                    <th>风险等级</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="opsTasksTbody">
+                                <tr><td colspan="6" style="text-align:center;">暂无任务</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载遮罩层 -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">智能运维分析中，请稍候...</div>
+            <div class="loading-subtext">后端正在处理，请耐心等待</div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
