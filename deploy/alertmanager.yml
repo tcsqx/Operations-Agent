@@ -1,0 +1,17 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'instance']
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 1h
+  receiver: 'opspilot-webhook'
+
+receivers:
+  - name: 'opspilot-webhook'
+    webhook_configs:
+      - url: 'http://opspilot:9900/api/v2/webhook/alertmanager'
+        send_resolved: true
+        http_config:
+          follow_redirects: true

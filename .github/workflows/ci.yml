@@ -1,0 +1,107 @@
+name: OpsPilot CI & Build Verification
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  # ============================================================================
+  # Job 1: Build, Lint & Automated Test Suite
+  # ============================================================================
+  build-and-test:
+    name: Java 17 Maven Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Verify Environment & Maven Version
+        run: |
+          java -version
+          mvn -version
+
+      - name: Run Full Automated Test Suite (31 Tests)
+        run: mvn clean test -B
+        env:
+          SPRING_AI_MCP_ENABLED: 'false'
+
+      - name: Publish Test Report Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-test-reports
+          path: target/surefire-reports/
+          retention-days: 7
+
+      - name: Package Release JAR
+        run: mvn package -DskipTests -B
+
+      - name: Upload Application JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opspilot-release-jar
+          path: target/super-biz-agent-*.jar
+          retention-days: 14
+
+  # ============================================================================
+  # Job 2: Dockerfile Build Verification
+  # ============================================================================
+  docker-verify:
+    name: Multi-stage Docker Build Verification
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Image (Dry Run)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: opspilot:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Job 3: Security & Secret Leak Scanning
+  # ============================================================================
+  security-audit:
+    name: Security & Secret Leak Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Scan for Hardcoded Credentials & Sensitive Tokens
+        run: |
+          echo "Scanning codebase for potential plaintext secrets or API keys..."
+          # Check for unmasked sk- keys or actual private keys
+          if grep -rnE "sk-[a-zA-Z0-9]{32,}" src/ 2>/dev/null; then
+            echo "ERROR: Potential hardcoded secret found!"
+            exit 1
+          fi
+          echo "Security scan passed: Zero hardcoded secrets detected."

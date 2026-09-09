@@ -1,0 +1,22 @@
+groups:
+  - name: opspilot_alerts
+    rules:
+      - alert: HostHighCpuLoad
+        expr: process_cpu_usage > 0.85
+        for: 1m
+        labels:
+          severity: warning
+          instance: opspilot-primary
+        annotations:
+          summary: "High CPU utilization detected on OpsPilot host"
+          description: "CPU load has exceeded 85% for more than 1 minute."
+
+      - alert: ServicePortDown
+        expr: probe_success == 0
+        for: 30s
+        labels:
+          severity: critical
+          instance: opspilot-primary
+        annotations:
+          summary: "TCP Service Port Unreachable"
+          description: "Application port failed health check."
