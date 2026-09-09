@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🚀 OpsPilot (SuperBizAgent 2.0)
+#  OpsPilot (SuperBizAgent 2.0)
 
 ### Enterprise AI SRE & DevOps Incident Copilot
 **面向生产环境的企业级 AI SRE 智能运维中枢：自动化告警分析、真实探针采样、根因推断与人机协同审批**
