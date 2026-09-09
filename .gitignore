@@ -1,0 +1,32 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### IDE & Editors ###
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+
+### OS Files ###
+.DS_Store
+Thumbs.db
+
+### Application Logs & Uploads ###
+logs/
+*.log
+uploads/*
+!uploads/.gitkeep
+
+### Sensitive Data & Environment ###
+*.key
+*.pem
+.env
+.env.local
+
+### Temporary Files ###
+*.tmp
+*.pid
