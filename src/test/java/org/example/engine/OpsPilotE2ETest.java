@@ -53,7 +53,9 @@ class OpsPilotE2ETest {
         assertEquals(TaskStatus.SUCCESS, finishedTask.getStatus());
         assertNotNull(finishedTask.getPlanJson());
         assertNotNull(finishedTask.getDiagnosisReport());
-        assertTrue(finishedTask.getDiagnosisReport().contains("OpsPilot SRE Incident Diagnosis Report"));
+        assertTrue(finishedTask.getDiagnosisReport().contains("告警分析") || finishedTask.getDiagnosisReport().contains("诊断报告"));
+        assertTrue(finishedTask.getDiagnosisReport().contains("server_info"));
+        assertTrue(finishedTask.getDiagnosisReport().contains("cpu_inspector"));
 
         // 4. Verify persisted steps
         List<TaskStepEntity> steps = stepRepository.findByTaskIdOrderByStepIndexAsc(finishedTask.getTaskId());

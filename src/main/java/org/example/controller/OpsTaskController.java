@@ -168,8 +168,8 @@ public class OpsTaskController {
 
         if ("APPROVE".equals(action)) {
             approval = approvalManager.approve(request.getApprovalId(), request.getOperator(), request.getComment());
-            // Resume task execution
-            agentEngine.executeTaskAsync(approval.getTaskId());
+            // Resume task execution after approval
+            agentEngine.resumeAfterApprovalAsync(approval.getTaskId(), approval.getApprovalId());
         } else if ("REJECT".equals(action)) {
             approval = approvalManager.reject(request.getApprovalId(), request.getOperator(), request.getComment());
         } else {

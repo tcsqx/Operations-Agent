@@ -17,10 +17,12 @@ milvus:
   username: ""
   password: ""
   database: default
-  timeout: 10000
+  timeout: 5000
 
 # Spring AI Alibaba DashScope 配置
 spring:
+  config:
+    import: optional:classpath:application-local.yml
   datasource:
     url: jdbc:h2:mem:opspilot;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     driver-class-name: org.h2.Driver
@@ -37,9 +39,10 @@ spring:
     show-sql: false
   ai:
     dashscope:
-      api-key: ${DASHSCOPE_API_KEY:your-api-key-here}  # 从环境变量读取或使用默认值
+      api-key: ${DASHSCOPE_API_KEY:your-api-key-here}  # 从环境变量或 application-local.yml 读取
       chat:
         options:
+          model: qwen3.8-flash
           timeout: 180000  # 超时时间180秒（3分钟）
       retry:
         max-attempts: 3  # 最大重试次数
@@ -48,27 +51,29 @@ spring:
           multiplier: 2  # 重试间隔倍数
           max-interval: 10000  # 最大重试间隔10秒
     
-    # Spring AI MCP 客户端配置
-    # 如果使用mock数据，请注释这部分内容
+    # Spring AI MCP 客户端配置（stdio本地模式）
     mcp:
       client:
         enabled: ${SPRING_AI_MCP_ENABLED:false}
-        name: tencent-mcp-server
+        name: tencent-cls
         version: 1.0.0
         request-timeout: 60s
         type: ASYNC
-        sse:
-          connections:
-            tencent-cls:
-              url: https://mcp-api.tencent-cloud.com
-              sse-endpoint: /sse/92XXXXXXXXb4  # 完整的SSE端点路径
+        stdio:
+          command: npx.cmd
+          args:
+            - -y
+            - "@tencentcloud/cls-mcp-server"
+          env:
+            TENCENTCLOUD_SECRET_ID: ${TENCENTCLOUD_SECRET_ID:your-secret-id-here}
+            TENCENTCLOUD_SECRET_KEY: ${TENCENTCLOUD_SECRET_KEY:your-secret-key-here}
 
 # 阿里云 DashScope Embedding API 配置
 dashscope:
   api:
-    key: ${DASHSCOPE_API_KEY:your-api-key-here}  # 从环境变量读取或使用默认值（用于自定义配置）
+    key: ${DASHSCOPE_API_KEY:your-api-key-here}  # 从环境变量或 application-local.yml 读取
   embedding:
-    model: text-embedding-v4  # 阿里云文本向量化模型
+    model: qwen3.7-text-embedding  # 阿里云文本向量化模型
 
 # 文档分片配置
 document:
@@ -79,14 +84,14 @@ document:
 # RAG 配置
 rag:
   top-k: 3  # 检索返回的最相似文档数量
-  model: "qwen3-max"  # 大语言模型名称
+  model: "qwen3.8-flash"  # 大语言模型名称（当前账号 qwen3.8-flash 拥有可用额度）
 
 # Prometheus 配置
 prometheus:
   base-url: http://localhost:9090
   timeout: 10  # 超时时间（秒）
-  mock-enabled: false  # 是否启用 Mock 模式（用于测试）
+  mock-enabled: ${PROMETHEUS_MOCK_ENABLED:true}  # 是否启用 Mock 模式（本地未部署 Prometheus 9090 时默认启用）
 
 # CLS 云日志服务配置
 cls:
-  mock-enabled: false  # 是否启用 Mock 模式（用于测试，设为 true 返回与告警关联的模拟日志数据）
+  mock-enabled: ${CLS_MOCK_ENABLED:true}  # 是否启用 Mock 模式（设为 true 返回与告警关联的模拟日志数据）

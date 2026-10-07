@@ -126,7 +126,10 @@ public class SafeCommandExecutor {
     }
 
     private void readStream(java.io.InputStream is, StringBuilder sb) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, isWindows ? StandardCharsets.UTF_8 : StandardCharsets.UTF_8))) {
+        java.nio.charset.Charset charset = isWindows
+            ? java.nio.charset.Charset.forName(System.getProperty("sun.jnu.encoding", "GBK"))
+            : StandardCharsets.UTF_8;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, charset))) {
             char[] buffer = new char[1024];
             int read;
             int totalBytes = 0;

@@ -67,6 +67,13 @@ public class VectorEmbeddingService {
     }
 
     /**
+     * 检查在线向量嵌入服务是否已就绪
+     */
+    public boolean isAvailable() {
+        return textEmbedding != null;
+    }
+
+    /**
      * 生成向量嵌入
      * 调用阿里云 DashScope Text Embedding API
      * 

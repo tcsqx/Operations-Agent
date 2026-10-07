@@ -6,6 +6,7 @@ import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.flow.agent.SupervisorAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import org.example.agent.tool.DateTimeTools;
+import org.example.agent.tool.HostInspectionTools;
 import org.example.agent.tool.InternalDocsTools;
 import org.example.agent.tool.QueryLogsTools;
 import org.example.agent.tool.QueryMetricsTools;
@@ -16,12 +17,14 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * AI Ops 智能运维服务
- * 负责多 Agent 协作的告警分析流程
+ * 负责多 Agent 协作（Supervisor + Planner/Replanner + Executor）的告警分析与根因排查流程
  */
 @Service
 public class AiOpsService {
@@ -40,8 +43,14 @@ public class AiOpsService {
     @Autowired(required = false)  // Mock 模式下才注册
     private QueryLogsTools queryLogsTools;
 
+    @Autowired(required = false)
+    private HostInspectionTools hostInspectionTools;
+
+    @Autowired(required = false)
+    private VectorSearchService vectorSearchService;
+
     /**
-     * 执行 AI Ops 告警分析流程
+     * 执行默认 AI Ops 告警分析流程
      *
      * @param chatModel      大模型实例
      * @param toolCallbacks  工具回调数组
@@ -49,11 +58,26 @@ public class AiOpsService {
      * @throws GraphRunnerException 如果 Agent 执行失败
      */
     public Optional<OverAllState> executeAiOpsAnalysis(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) throws GraphRunnerException {
+        return executeAiOpsAnalysis(chatModel, toolCallbacks, null);
+    }
+
+    /**
+     * 执行指定任务描述的 AI Ops 多 Agent 协作流程（规划 → 执行 → 再规划）
+     *
+     * @param chatModel        大模型实例
+     * @param toolCallbacks    外部 MCP 工具回调数组
+     * @param customTaskPrompt 自定义运维排查任务描述（为空时使用标准全量告警排查提示词）
+     * @return 分析结果状态
+     * @throws GraphRunnerException 如果 Agent 执行失败
+     */
+    public Optional<OverAllState> executeAiOpsAnalysis(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks, String customTaskPrompt) throws GraphRunnerException {
         logger.info("开始执行 AI Ops 多 Agent 协作流程");
 
+        ToolCallback[] safeCallbacks = toolCallbacks != null ? toolCallbacks : new ToolCallback[0];
+
         // 构建 Planner 和 Executor Agent
-        ReactAgent plannerAgent = buildPlannerAgent(chatModel, toolCallbacks);
-        ReactAgent executorAgent = buildExecutorAgent(chatModel, toolCallbacks);
+        ReactAgent plannerAgent = buildPlannerAgent(chatModel, safeCallbacks);
+        ReactAgent executorAgent = buildExecutorAgent(chatModel, safeCallbacks);
 
         // 构建 Supervisor Agent
         SupervisorAgent supervisorAgent = SupervisorAgent.builder()
@@ -64,20 +88,57 @@ public class AiOpsService {
                 .subAgents(List.of(plannerAgent, executorAgent))
                 .build();
 
-        String taskPrompt = "你是企业级 SRE，接到了自动化告警排查任务。请结合工具调用，执行**规划→执行→再规划**的闭环，并最终按照固定模板输出《告警分析报告》。禁止编造虚假数据，如连续多次查询失败需诚实反馈无法完成的原因。";
+        String basePrompt = (customTaskPrompt != null && !customTaskPrompt.trim().isEmpty())
+                ? "你是企业级 SRE，接到了如下运维排查任务：\n【任务描述】：" + customTaskPrompt.trim() + "\n请结合工具调用（包括 Prometheus 告警、CLS 日志、RAG 知识库以及宿主机真实探针），执行**规划→执行→再规划**的闭环，并最终按照固定模板输出《告警分析报告》。禁止编造虚假数据，如连续多次查询失败需诚实反馈无法完成的原因。"
+                : "你是企业级 SRE，接到了自动化告警排查任务。请结合工具调用，执行**规划→执行→再规划**的闭环，并最终按照固定模板输出《告警分析报告》。禁止编造虚假数据，如连续多次查询失败需诚实反馈无法完成的原因。";
+
+        // Pre-retrieval RAG 预检索 SOP 文档注入
+        String enrichedTaskPrompt = enrichWithRagKnowledge(basePrompt, customTaskPrompt);
 
         logger.info("调用 Supervisor Agent 开始编排...");
-        return supervisorAgent.invoke(taskPrompt);
+        return supervisorAgent.invoke(enrichedTaskPrompt);
     }
 
     /**
-     * 从执行结果中提取最终报告文本
+     * 预检索内部运维手册 (SOP) 注入任务上下文，辅助 Planner 制定精准排查计划
+     */
+    public String enrichWithRagKnowledge(String basePrompt, String customQuery) {
+        if (vectorSearchService == null) {
+            return basePrompt;
+        }
+        try {
+            String searchQuery = (customQuery != null && !customQuery.trim().isEmpty())
+                    ? customQuery
+                    : "HighCPUUsage HighMemoryUsage SlowResponse ServiceUnavailable 告警排查流程";
+            List<VectorSearchService.SearchResult> docs = vectorSearchService.searchSimilarDocuments(searchQuery, 3);
+            if (docs == null || docs.isEmpty()) {
+                return basePrompt;
+            }
+            StringBuilder sb = new StringBuilder(basePrompt);
+            sb.append("\n\n--- 内部运维知识库预检索参考手册 (SOP) ---\n");
+            for (int i = 0; i < docs.size(); i++) {
+                VectorSearchService.SearchResult doc = docs.get(i);
+                sb.append(String.format("[SOP 参考 %d | 相关度: %.3f]\n%s\n\n", i + 1, doc.getScore(), doc.getContent()));
+            }
+            sb.append("--- 参考手册结束（如需查询更多文档可随时调用 queryInternalDocs 工具） ---");
+            return sb.toString();
+        } catch (Exception e) {
+            logger.warn("AI Ops 预检索 RAG 知识库异常: {}", e.getMessage());
+            return basePrompt;
+        }
+    }
+
+    /**
+     * 从执行结果中提取最终报告文本，并自动归档沉淀至 RAG 知识库
      *
      * @param state 执行状态
      * @return 报告文本（如果存在）
      */
     public Optional<String> extractFinalReport(OverAllState state) {
         logger.info("开始提取最终报告...");
+        if (state == null) {
+            return Optional.empty();
+        }
 
         // 提取 Planner 最终输出（包含完整的告警分析报告）
         Optional<AssistantMessage> plannerFinalOutput = state.value("planner_plan")
@@ -87,6 +148,9 @@ public class AiOpsService {
         if (plannerFinalOutput.isPresent()) {
             String reportText = plannerFinalOutput.get().getText();
             logger.info("成功提取到 Planner 最终报告，长度: {}", reportText.length());
+            if (vectorSearchService != null && reportText != null && !reportText.isBlank()) {
+                vectorSearchService.archiveIncidentReport("aiops-" + UUID.randomUUID().toString().substring(0, 8), "AI Ops 自动告警分析报告", reportText);
+            }
             return Optional.of(reportText);
         } else {
             logger.warn("未能提取到 Planner 最终报告");
@@ -97,7 +161,7 @@ public class AiOpsService {
     /**
      * 构建 Planner Agent
      */
-    private ReactAgent buildPlannerAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
+    public ReactAgent buildPlannerAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
         return ReactAgent.builder()
                 .name("planner_agent")
                 .description("负责拆解告警、规划与再规划步骤")
@@ -112,7 +176,7 @@ public class AiOpsService {
     /**
      * 构建 Executor Agent
      */
-    private ReactAgent buildExecutorAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
+    public ReactAgent buildExecutorAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
         return ReactAgent.builder()
                 .name("executor_agent")
                 .description("负责执行 Planner 的首个步骤并及时反馈")
@@ -126,16 +190,16 @@ public class AiOpsService {
 
     /**
      * 动态构建方法工具数组
-     * 根据 cls.mock-enabled 决定是否包含 QueryLogsTools
+     * 包含原有的 Prometheus/CLS/RAG/DateTime 工具以及宿主机 9 个真实物理探针工具 (HostInspectionTools)
      */
-    private Object[] buildMethodToolsArray() {
-        if (queryLogsTools != null) {
-            // Mock 模式：包含 QueryLogsTools
-            return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools};
-        } else {
-            // 真实模式：不包含 QueryLogsTools（由 MCP 提供日志查询功能）
-            return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools};
-        }
+    public Object[] buildMethodToolsArray() {
+        List<Object> toolBeans = new ArrayList<>();
+        if (dateTimeTools != null) toolBeans.add(dateTimeTools);
+        if (internalDocsTools != null) toolBeans.add(internalDocsTools);
+        if (queryMetricsTools != null) toolBeans.add(queryMetricsTools);
+        if (queryLogsTools != null) toolBeans.add(queryLogsTools);
+        if (hostInspectionTools != null) toolBeans.add(hostInspectionTools);
+        return toolBeans.toArray();
     }
 
     /**
@@ -145,7 +209,7 @@ public class AiOpsService {
         return """
                 你是 Planner Agent，同时承担 Replanner 角色，负责：
                 1. 读取当前输入任务 {input} 以及 Executor 的最近反馈 {executor_feedback}。
-                2. 分析 Prometheus 告警、日志、内部文档等信息，制定可执行的下一步步骤。
+                2. 分析 Prometheus 告警、CLS 日志、内部运维文档 (RAG) 以及宿主机真实探针指标（CPU/内存/磁盘/进程/端口/服务/本地日志），制定可执行的下一步步骤。
                 3. 在执行阶段，输出 JSON，包含 decision (PLAN|EXECUTE|FINISH)、step 描述、预期要调用的工具、以及必要的上下文。
                 4. 调用任何腾讯云日志/主题相关工具时，region 参数必须使用连字符格式（如 ap-guangzhou），若不确定请省略以使用默认值。
                 5. 严格禁止编造数据，只能引用工具返回的真实内容；如果连续 3 次调用同一工具仍失败或返回空结果，需停止该方向并在最终报告的结论部分说明"无法完成"的原因。

@@ -15,8 +15,8 @@ public class CommandGuard {
 
     // Critical destructive command patterns that must NEVER be executed
     private static final List<Pattern> BLACKLIST_PATTERNS = Arrays.asList(
-        Pattern.compile("rm\\s+(-[a-zA-Z]*[rf][a-zA-Z]*\\s+.*(/|\\*|~|\\.\\.)|--no-preserve-root)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("rm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+-[a-zA-Z]*f[a-zA-Z]*\\s+.*(/|\\*))", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(^|[;&|\\s])(/bin/|/usr/bin/)?rm\\s+(-[a-zA-Z]*[rf][a-zA-Z]*\\s+.*(/|\\*|~|\\.\\.)|--no-preserve-root)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(^|[;&|\\s])(/bin/|/usr/bin/)?rm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+-[a-zA-Z]*f[a-zA-Z]*\\s+.*(/|\\*))", Pattern.CASE_INSENSITIVE),
         Pattern.compile("mkfs(\\.[a-zA-Z0-9]+)?\\s+", Pattern.CASE_INSENSITIVE),
         Pattern.compile("dd\\s+.*(of=/dev/(sd[a-z]|nvme|hd[a-z]|vd[a-z]))", Pattern.CASE_INSENSITIVE),
         Pattern.compile("(shutdown|reboot|poweroff|halt|init\\s+[06])(\\s+.*)?$", Pattern.CASE_INSENSITIVE),
@@ -24,7 +24,10 @@ public class CommandGuard {
         Pattern.compile("chmod\\s+(-R\\s+)?(777|000)\\s+/", Pattern.CASE_INSENSITIVE),
         Pattern.compile("(fdisk|parted|sfdisk|wipefs)\\s+", Pattern.CASE_INSENSITIVE),
         Pattern.compile(">\\s*/dev/(sd[a-z]|nvme|mem|kmem)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("DROP\\s+(DATABASE|SCHEMA)\\s+", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("DROP\\s+(DATABASE|SCHEMA)\\s+", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(^|[;&|\\s])(del|erase)\\s+.*[/*].*(/[fqs]|\\*)", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(^|[;&|\\s])(rd|rmdir)\\s+/s\\s+/q\\s+[a-zA-Z]:\\\\", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(^|[;&|\\s])format\\s+[a-zA-Z]:", Pattern.CASE_INSENSITIVE)
     );
 
     // High risk command patterns that require Human-In-The-Loop approval
@@ -36,7 +39,8 @@ public class CommandGuard {
         Pattern.compile("killall\\s+", Pattern.CASE_INSENSITIVE),
         Pattern.compile("iptables\\s+", Pattern.CASE_INSENSITIVE),
         Pattern.compile("ufw\\s+(disable|reset)", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("pkill\\s+", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("pkill\\s+", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("(taskkill|Stop-Process|Restart-Service|Stop-Service|net\\s+stop)\\s+", Pattern.CASE_INSENSITIVE)
     );
 
     public static class ValidationResult {

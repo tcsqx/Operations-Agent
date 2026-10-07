@@ -42,6 +42,9 @@ public class VectorIndexService {
     @Autowired
     private DocumentChunkService chunkService;
 
+    @Autowired(required = false)
+    private VectorSearchService vectorSearchService;
+
     @Value("${file.upload.path}")
     private String uploadPath;
 
@@ -135,14 +138,25 @@ public class VectorIndexService {
         String content = Files.readString(path);
         logger.info("读取文件: {}, 内容长度: {} 字符", path, content.length());
 
-        // 2. 删除该文件的旧数据（如果存在）
-        deleteExistingData(path.toString());
-
-        // 3. 文档分片
+        // 2. 文档分片
         List<DocumentChunk> chunks = chunkService.chunkDocument(content, path.toString());
         logger.info("文档分片完成: {} -> {} 个分片", filePath, chunks.size());
 
-        // 4. 为每个分片生成向量并插入 Milvus
+        // 3. 同步更新本地混合检索知识库
+        if (vectorSearchService != null) {
+            vectorSearchService.upsertLocalChunks(path.toString(), chunks);
+        }
+
+        // 若 Milvus 未启用，直接完成本地索引
+        if (milvusClient == null) {
+            logger.info("Milvus 未启用，已完成本地知识库分片索引: {}, 共 {} 个分片", filePath, chunks.size());
+            return;
+        }
+
+        // 4. 删除 Milvus 中该文件的旧数据（如果存在）
+        deleteExistingData(path.toString());
+
+        // 5. 为每个分片生成向量并插入 Milvus
         for (int i = 0; i < chunks.size(); i++) {
             DocumentChunk chunk = chunks.get(i);
             

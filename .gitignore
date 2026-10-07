@@ -26,7 +26,14 @@ uploads/*
 *.pem
 .env
 .env.local
+# 本地敏感配置（含真实 API Key），绝对不提交
+application-local.yml
+application-secret.yml
+application-local.yaml
 
 ### Temporary Files ###
 *.tmp
 *.pid
+
+### Milvus & Docker Data Volumes ###
+volumes/

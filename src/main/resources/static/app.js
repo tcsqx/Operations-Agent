@@ -1,7 +1,7 @@
 // SuperBizAgent 前端应用
 class SuperBizAgentApp {
     constructor() {
-        this.apiBaseUrl = 'http://localhost:9900/api';
+        this.apiBaseUrl = '/api';
         this.currentMode = 'quick'; // 'quick' 或 'stream'
         this.sessionId = this.generateSessionId();
         this.isStreaming = false;
@@ -1548,9 +1548,9 @@ document.head.appendChild(style);
 // ==========================================================================
 class OpsPilotConsole {
     constructor() {
-        this.apiBase = 'http://localhost:9900/api/v2';
+        this.apiBase = '/api/v2';
         this.modal = document.getElementById('opsPilotModal');
-        this.openBtn = document.getElementById('aiOpsSidebarBtn');
+        this.openBtn = document.getElementById('opsPilotConsoleBtn');
         this.closeBtn = document.getElementById('closeOpsModalBtn');
         this.promptInput = document.getElementById('opsPromptInput');
         this.startBtn = document.getElementById('startDiagnosisBtn');
@@ -1810,6 +1810,17 @@ class OpsPilotConsole {
                 alert(`工单 ${approvalId} 操作已提交: ${action}`);
                 this.loadPendingApprovals();
                 this.pollPendingApprovals();
+                if (action === 'APPROVE' && data.data && data.data.taskId) {
+                    const taskId = data.data.taskId;
+                    this.activeTaskId = taskId;
+                    const diagTabBtn = document.querySelector('.opspilot-tab-btn[data-tab="tab-diagnosis"]');
+                    if (diagTabBtn) diagTabBtn.click();
+                    this.liveCard.style.display = 'block';
+                    this.liveTaskId.innerText = `Task ID: ${taskId}`;
+                    this.liveStatus.className = 'ops-status-badge';
+                    this.liveStatus.innerText = 'RUNNING';
+                    this.pollTaskProgress(taskId);
+                }
             } else {
                 alert('操作失败: ' + data.message);
             }

@@ -32,12 +32,13 @@ public class MilvusConfig {
     @Bean
     public MilvusServiceClient milvusServiceClient() {
         try {
-            logger.info("正在初始化 Milvus 客户端...");
             milvusClient = milvusClientFactory.createClient();
-            logger.info("Milvus 客户端初始化完成");
+            if (milvusClient != null) {
+                logger.info("✅ Milvus 客户端初始化完成");
+            }
             return milvusClient;
         } catch (Exception e) {
-            logger.warn("Milvus 客户端连接未就绪或未部署 ({}). 系统将降级运行，跳过向量存储功能", e.getMessage());
+            logger.info("ℹ️ Milvus 未部署，已启用内置内存混合 RAG 引擎 ({})", e.getMessage());
             return null;
         }
     }

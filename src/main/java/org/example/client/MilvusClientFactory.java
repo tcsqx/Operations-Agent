@@ -39,11 +39,20 @@ public class MilvusClientFactory {
      * @throws RuntimeException 如果连接或初始化失败
      */
     public MilvusServiceClient createClient() {
+        String host = milvusProperties.getHost();
+        int port = milvusProperties.getPort();
+
+        // 快速探测端口连通性，避免未部署 Milvus 时 gRPC 阻塞等待并打印大量底层 ERROR 堆栈
+        if (!isPortReachable(host, port, 300)) {
+            logger.info("ℹ️ 本地未检测到 Milvus 向量库 ({}:{})，已跳过远程连接并自动启用【内置本地内存混合 RAG 引擎】", host, port);
+            return null;
+        }
+
         MilvusServiceClient client = null;
 
         try {
             // 1. 连接到 Milvus
-            logger.info("正在连接到 Milvus: {}:{}", milvusProperties.getHost(), milvusProperties.getPort());
+            logger.info("正在连接到 Milvus: {}:{}", host, port);
             client = connectToMilvus();
             logger.info("成功连接到 Milvus");
 
@@ -63,11 +72,20 @@ public class MilvusClientFactory {
             return client;
 
         } catch (Exception e) {
-            logger.error("创建 Milvus 客户端失败", e);
+            logger.warn("Milvus 客户端连接未就绪 ({})，将自动降级为内置本地内存混合 RAG 引擎", e.getMessage());
             if (client != null) {
                 client.close();
             }
-            throw new RuntimeException("创建 Milvus 客户端失败: " + e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private boolean isPortReachable(String host, int port, int timeoutMs) {
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress(host, port), timeoutMs);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 

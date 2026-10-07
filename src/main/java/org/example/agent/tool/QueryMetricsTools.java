@@ -48,7 +48,11 @@ public class QueryMetricsTools {
                 .connectTimeout(Duration.ofSeconds(timeout))
                 .readTimeout(Duration.ofSeconds(timeout))
                 .build();
-        logger.info("✅ QueryMetricsTools 初始化成功, Prometheus URL: {}, Mock模式: {}", prometheusBaseUrl, mockEnabled);
+        if (mockEnabled) {
+            logger.info("✅ QueryMetricsTools 初始化成功 (Mock模式已启用，内置模拟告警源)");
+        } else {
+            logger.info("✅ QueryMetricsTools 初始化成功, Prometheus Endpoint: {}", prometheusBaseUrl);
+        }
     }
     
     /**

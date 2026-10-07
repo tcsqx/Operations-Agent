@@ -51,6 +51,9 @@ public class FileUploadController {
         try {
             String uploadPath = fileUploadConfig.getPath();
             Path uploadDir = Paths.get(uploadPath).normalize();
+            if (!Files.exists(uploadDir) && Files.exists(Paths.get("Operations-Agent-main").resolve(uploadPath).normalize())) {
+                uploadDir = Paths.get("Operations-Agent-main").resolve(uploadPath).normalize();
+            }
             if (!Files.exists(uploadDir)) {
                 Files.createDirectories(uploadDir);
             }

@@ -29,12 +29,19 @@ public class MilvusCheckController {
     public ResponseEntity<Map<String, Object>> simpleHealth() {
         Map<String, Object> result = new HashMap<>();
         
+        if (milvusClient == null) {
+            result.put("status", "LOCAL_HYBRID_FALLBACK");
+            result.put("message", "Milvus 未连接，当前已自动启用本地内存混合 RAG 检索引擎");
+            return ResponseEntity.ok(result);
+        }
+
         try {
             R<ShowCollectionsResponse> response = milvusClient.showCollections(
                 ShowCollectionsParam.newBuilder().build()
             );
             
             if (response.getStatus() == 0) {
+                result.put("status", "MILVUS_CONNECTED");
                 result.put("message", "ok");
                 result.put("collections", response.getData().getCollectionNamesList());
                 return ResponseEntity.ok(result);

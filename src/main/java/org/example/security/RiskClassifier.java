@@ -50,13 +50,18 @@ public class RiskClassifier {
         if (lowerTool.contains("shell") || lowerTool.contains("exec") || lowerTool.contains("cmd")) {
             if (commandOrParams != null) {
                 String lowerCmd = commandOrParams.toLowerCase();
-                if (lowerCmd.contains("rm -rf") || lowerCmd.contains("mkfs") || lowerCmd.contains("dd ") || lowerCmd.contains("shutdown")) {
+                if (lowerCmd.contains("rm -rf") || lowerCmd.contains("mkfs") || lowerCmd.contains("dd ")
+                        || lowerCmd.contains("shutdown") || lowerCmd.contains("format ") || lowerCmd.contains("rd /s")) {
                     return RiskLevel.CRITICAL;
                 }
-                if (lowerCmd.contains("restart") || lowerCmd.contains("stop") || lowerCmd.contains("kill") || lowerCmd.contains("iptables")) {
+                if (lowerCmd.contains("restart") || lowerCmd.contains("stop") || lowerCmd.contains("kill")
+                        || lowerCmd.contains("iptables") || lowerCmd.contains("taskkill")
+                        || lowerCmd.contains("stop-process") || lowerCmd.contains("restart-service")
+                        || lowerCmd.contains("stop-service") || lowerCmd.contains("net stop")) {
                     return RiskLevel.HIGH;
                 }
-                if (lowerCmd.contains("cat ") || lowerCmd.contains("grep ") || lowerCmd.contains("tail ") || lowerCmd.contains("top ") || lowerCmd.contains("ps ")) {
+                if (lowerCmd.contains("cat ") || lowerCmd.contains("grep ") || lowerCmd.contains("tail ")
+                        || lowerCmd.contains("top ") || lowerCmd.contains("ps ") || lowerCmd.contains("Get-Process".toLowerCase())) {
                     return RiskLevel.LOW;
                 }
             }

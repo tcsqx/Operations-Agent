@@ -60,37 +60,25 @@ public class SystemLogSearchTool implements BaseTool {
 
         try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
             long length = raf.length();
-            long pos = length - 1;
-            List<String> matchedLines = new ArrayList<>();
-            StringBuilder currentLine = new StringBuilder();
-
-            // Read backwards to get recent lines
-            long bytesRead = 0;
             long maxScanBytes = 2 * 1024 * 1024; // Scan at most 2MB backwards
+            long startPos = Math.max(0, length - maxScanBytes);
+            int bytesToRead = (int) (length - startPos);
 
-            while (pos >= 0 && matchedLines.size() < maxLines && bytesRead < maxScanBytes) {
-                raf.seek(pos);
-                int b = raf.read();
-                bytesRead++;
-                pos--;
+            byte[] buffer = new byte[bytesToRead];
+            raf.seek(startPos);
+            raf.readFully(buffer);
 
-                if (b == '\n') {
-                    String line = currentLine.reverse().toString().trim();
-                    currentLine = new StringBuilder();
-                    if (!line.isEmpty()) {
-                        if (keyword.isEmpty() || line.toLowerCase().contains(keyword)) {
-                            matchedLines.add(line);
-                        }
+            String tailText = new String(buffer, StandardCharsets.UTF_8);
+            String[] lines = tailText.split("\r?\n");
+            int minIndex = (startPos > 0 && lines.length > 1) ? 1 : 0;
+
+            List<String> matchedLines = new ArrayList<>();
+            for (int i = lines.length - 1; i >= minIndex && matchedLines.size() < maxLines; i--) {
+                String line = lines[i].trim();
+                if (!line.isEmpty()) {
+                    if (keyword.isEmpty() || line.toLowerCase().contains(keyword)) {
+                        matchedLines.add(line);
                     }
-                } else if (b != '\r') {
-                    currentLine.append((char) b);
-                }
-            }
-
-            if (currentLine.length() > 0 && matchedLines.size() < maxLines) {
-                String line = currentLine.reverse().toString().trim();
-                if (keyword.isEmpty() || line.toLowerCase().contains(keyword)) {
-                    matchedLines.add(line);
                 }
             }
 

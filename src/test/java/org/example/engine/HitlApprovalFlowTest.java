@@ -81,4 +81,30 @@ class HitlApprovalFlowTest {
         TaskEntity cancelledTask = taskRepository.findById(task.getTaskId()).orElseThrow();
         assertEquals(TaskStatus.CANCELLED, cancelledTask.getStatus());
     }
+
+    @Test
+    @DisplayName("HITL E2E: High-risk task should pause at WAITING_APPROVAL and complete to SUCCESS after approve + resumeAfterApproval")
+    void testFullEngineHitlPauseApproveAndResumeToSuccess() {
+        // 1. Create a task that includes a high-risk restart directive
+        TaskEntity task = agentEngine.createTask("检查 CPU 负载并执行 restart service:nginx", "REMEDIATION");
+
+        // 2. Execute task -> should execute low-risk probes and pause at high-risk step
+        TaskEntity paused = agentEngine.executeTask(task.getTaskId());
+        assertEquals(TaskStatus.WAITING_APPROVAL, paused.getStatus());
+
+        // 3. Find pending approval ticket for this task
+        HitlApprovalEntity pendingTicket = approvalManager.getPendingApprovals().stream()
+                .filter(a -> task.getTaskId().equals(a.getTaskId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected pending HITL ticket for task " + task.getTaskId()));
+
+        // 4. Approve ticket (transitions WAITING_APPROVAL -> RUNNING) and resume execution
+        HitlApprovalEntity approved = approvalManager.approve(pendingTicket.getApprovalId(), "oncall-sre", "Approved remediation");
+        assertEquals(ApprovalStatus.APPROVED, approved.getStatus());
+
+        TaskEntity completed = agentEngine.resumeAfterApproval(task.getTaskId(), approved.getApprovalId());
+        assertEquals(TaskStatus.SUCCESS, completed.getStatus());
+        assertNotNull(completed.getDiagnosisReport());
+        assertFalse(completed.getDiagnosisReport().isBlank());
+    }
 }

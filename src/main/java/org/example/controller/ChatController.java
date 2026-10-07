@@ -47,6 +47,9 @@ public class ChatController {
     private ChatService chatService;
 
     @Autowired(required = false)
+    private org.example.engine.OpsPilotAgentEngine opsPilotAgentEngine;
+
+    @Autowired(required = false)
     private ToolCallbackProvider tools;
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -75,9 +78,16 @@ public class ChatController {
             // 获取或创建会话
             SessionInfo session = getOrCreateSession(request.getId());
             
-            // 获取历史消息
+            // 获取历史消息与早期压缩摘要
             List<Map<String, String>> history = session.getHistory();
-            logger.info("会话历史消息对数: {}", history.size() / 2);
+            String historySummary = session.getHistorySummary();
+            logger.info("会话历史消息对数: {}, 摘要长度: {}", history.size() / 2, historySummary.length());
+
+            if (!chatService.isApiKeyConfigured()) {
+                String fallbackAnswer = chatService.buildLocalDiagnosticReply(request.getQuestion());
+                session.addMessage(request.getQuestion(), fallbackAnswer);
+                return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fallbackAnswer)));
+            }
 
             // 创建 DashScope API 和 ChatModel
             DashScopeApi dashScopeApi = chatService.createDashScopeApi();
@@ -88,8 +98,8 @@ public class ChatController {
 
             logger.info("开始 ReactAgent 对话（支持自动工具调用）");
             
-            // 构建系统提示词（包含历史消息）
-            String systemPrompt = chatService.buildSystemPrompt(history);
+            // 构建系统提示词（包含 RAG 预检索、早期对话摘要与近期历史消息）
+            String systemPrompt = chatService.buildSystemPrompt(history, historySummary, request.getQuestion());
             
             // 创建 ReactAgent
             ReactAgent agent = chatService.createReactAgent(chatModel, systemPrompt);
@@ -105,8 +115,13 @@ public class ChatController {
             return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fullAnswer)));
 
         } catch (Exception e) {
-            logger.error("对话失败", e);
-            return ResponseEntity.ok(ApiResponse.success(ChatResponse.error(e.getMessage())));
+            logger.error("对话失败，自动启用本地混合 RAG 与宿主机探针兜底: {}", e.getMessage());
+            try {
+                String fallbackAnswer = chatService.buildLocalDiagnosticReply(request.getQuestion());
+                return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fallbackAnswer)));
+            } catch (Exception ignored) {
+                return ResponseEntity.ok(ApiResponse.success(ChatResponse.error(e.getMessage())));
+            }
         }
     }
 
@@ -163,9 +178,25 @@ public class ChatController {
                 // 获取或创建会话
                 SessionInfo session = getOrCreateSession(request.getId());
                 
-                // 获取历史消息
+                // 获取历史消息与早期压缩摘要
                 List<Map<String, String>> history = session.getHistory();
-                logger.info("ReactAgent 会话历史消息对数: {}", history.size() / 2);
+                String historySummary = session.getHistorySummary();
+                logger.info("ReactAgent 会话历史消息对数: {}, 摘要长度: {}", history.size() / 2, historySummary.length());
+
+                if (!chatService.isApiKeyConfigured()) {
+                    String fallbackAnswer = chatService.buildLocalDiagnosticReply(request.getQuestion());
+                    int chunkSize = 60;
+                    for (int i = 0; i < fallbackAnswer.length(); i += chunkSize) {
+                        int end = Math.min(i + chunkSize, fallbackAnswer.length());
+                        emitter.send(SseEmitter.event()
+                                .name("message")
+                                .data(SseMessage.content(fallbackAnswer.substring(i, end)), MediaType.APPLICATION_JSON));
+                    }
+                    session.addMessage(request.getQuestion(), fallbackAnswer);
+                    emitter.send(SseEmitter.event().name("message").data(SseMessage.done(), MediaType.APPLICATION_JSON));
+                    emitter.complete();
+                    return;
+                }
 
                 // 创建 DashScope API 和 ChatModel
                 DashScopeApi dashScopeApi = chatService.createDashScopeApi();
@@ -176,8 +207,8 @@ public class ChatController {
 
                 logger.info("开始 ReactAgent 流式对话（支持自动工具调用）");
                 
-                // 构建系统提示词（包含历史消息）
-                String systemPrompt = chatService.buildSystemPrompt(history);
+                // 构建系统提示词（包含 RAG 预检索、早期对话摘要与近期历史消息）
+                String systemPrompt = chatService.buildSystemPrompt(history, historySummary, request.getQuestion());
                 
                 // 创建 ReactAgent
                 ReactAgent agent = chatService.createReactAgent(chatModel, systemPrompt);
@@ -200,14 +231,21 @@ public class ChatController {
                                     // 流式增量内容，逐步显示
                                     String chunk = streamingOutput.message().getText();
                                     if (chunk != null && !chunk.isEmpty()) {
-                                        fullAnswerBuilder.append(chunk);
-                                        
-                                        // 实时发送到前端
-                                        emitter.send(SseEmitter.event()
-                                                .name("message")
-                                                .data(SseMessage.content(chunk), MediaType.APPLICATION_JSON));
-                                        
-                                        logger.info("发送流式内容: {}", chunk);
+                                        if (fullAnswerBuilder.length() == 0 && chunk.trim().startsWith("Exception:")) {
+                                            logger.warn("ReactAgent 内部捕获大模型异常 ({}), 自动切换至本地 RAG + 探针诊断", chunk.trim());
+                                            String fallback = chatService.buildLocalDiagnosticReply(request.getQuestion());
+                                            fullAnswerBuilder.append(fallback);
+                                            emitter.send(SseEmitter.event()
+                                                    .name("message")
+                                                    .data(SseMessage.content(fallback), MediaType.APPLICATION_JSON));
+                                        } else {
+                                            fullAnswerBuilder.append(chunk);
+                                            // 实时发送到前端
+                                            emitter.send(SseEmitter.event()
+                                                    .name("message")
+                                                    .data(SseMessage.content(chunk), MediaType.APPLICATION_JSON));
+                                            logger.info("发送流式内容: {}", chunk);
+                                        }
                                     }
                                 } else if (type == OutputType.AGENT_MODEL_FINISHED) {
                                     // 模型推理完成
@@ -226,16 +264,29 @@ public class ChatController {
                         }
                     },
                     error -> {
-                        // 错误处理
-                        logger.error("ReactAgent 流式对话失败", error);
+                        // 错误处理：若流式调用因额度或网络异常中断，自动回退至本地混合 RAG + 宿主机探针诊断
+                        logger.error("ReactAgent 流式对话失败，启用本地兜底诊断: {}", error.getMessage());
                         try {
-                            emitter.send(SseEmitter.event()
-                                    .name("message")
-                                    .data(SseMessage.error(error.getMessage()), MediaType.APPLICATION_JSON));
+                            if (fullAnswerBuilder.length() == 0) {
+                                String fallbackAnswer = chatService.buildLocalDiagnosticReply(request.getQuestion());
+                                emitter.send(SseEmitter.event()
+                                        .name("message")
+                                        .data(SseMessage.content(fallbackAnswer), MediaType.APPLICATION_JSON));
+                                session.addMessage(request.getQuestion(), fallbackAnswer);
+                                emitter.send(SseEmitter.event()
+                                        .name("message")
+                                        .data(SseMessage.done(), MediaType.APPLICATION_JSON));
+                                emitter.complete();
+                            } else {
+                                emitter.send(SseEmitter.event()
+                                        .name("message")
+                                        .data(SseMessage.error(error.getMessage()), MediaType.APPLICATION_JSON));
+                                emitter.completeWithError(error);
+                            }
                         } catch (IOException ex) {
-                            logger.error("发送错误消息失败", ex);
+                            logger.error("发送兜底消息失败", ex);
+                            emitter.completeWithError(error);
                         }
-                        emitter.completeWithError(error);
                     },
                     () -> {
                         // 完成处理
@@ -289,18 +340,27 @@ public class ChatController {
             try {
                 logger.info("收到 AI 智能运维请求 - 启动多 Agent 协作流程");
 
-                DashScopeApi dashScopeApi = chatService.createDashScopeApi();
-                DashScopeChatModel chatModel = DashScopeChatModel.builder()
-                        .dashScopeApi(dashScopeApi)
-                        .defaultOptions(DashScopeChatOptions.builder()
-                                .withModel(DashScopeChatModel.DEFAULT_MODEL_NAME)
-                                .withTemperature(0.3)
-                                .withMaxToken(8000)
-                                .withTopP(0.9)
-                                .build())
-                        .build();
+                if (!chatService.isApiKeyConfigured() && opsPilotAgentEngine != null) {
+                    emitter.send(SseEmitter.event().name("message")
+                            .data(SseMessage.content("> 💡 当前未配置 `DASHSCOPE_API_KEY`，正在调用本地 OpsPilot 宿主机真实探针与混合 RAG 引擎执行全量智能巡检...\n\n"), MediaType.APPLICATION_JSON));
+                    var task = opsPilotAgentEngine.createTask("执行全量智能运维巡检：排查 HighCPUUsage、HighMemoryUsage、SlowResponse 告警与当前宿主机 CPU/内存/磁盘真实负载", "AUTO_AIOPS_INSPECTION");
+                    task = opsPilotAgentEngine.executeTask(task.getTaskId());
+                    String report = task.getDiagnosisReport() != null ? task.getDiagnosisReport() : "巡检已完成";
+                    int chunkSize = 60;
+                    for (int i = 0; i < report.length(); i += chunkSize) {
+                        int end = Math.min(i + chunkSize, report.length());
+                        emitter.send(SseEmitter.event().name("message")
+                                .data(SseMessage.content(report.substring(i, end)), MediaType.APPLICATION_JSON));
+                    }
+                    emitter.send(SseEmitter.event().name("message").data(SseMessage.done(), MediaType.APPLICATION_JSON));
+                    emitter.complete();
+                    return;
+                }
 
-                ToolCallback[] toolCallbacks = tools.getToolCallbacks();
+                DashScopeApi dashScopeApi = chatService.createDashScopeApi();
+                DashScopeChatModel chatModel = chatService.createChatModel(dashScopeApi, 0.3, 8000, 0.9);
+
+                ToolCallback[] toolCallbacks = chatService.getToolCallbacks();
 
                 emitter.send(SseEmitter.event().name("message").data(SseMessage.content("正在读取告警并拆解任务...\n")));
                 
@@ -386,6 +446,7 @@ public class ChatController {
                 SessionInfoResponse response = new SessionInfoResponse();
                 response.setSessionId(sessionId);
                 response.setMessagePairCount(session.getMessagePairCount());
+                response.setHistorySummary(session.getHistorySummary());
                 response.setCreateTime(session.createTime);
                 return ResponseEntity.ok(ApiResponse.success(response));
             } else {
@@ -410,26 +471,33 @@ public class ChatController {
     // ==================== 内部类 ====================
 
     /**
-     * 会话信息
-     * 管理单个会话的历史消息，支持自动清理和线程安全
+     * 会话信息（支持分层记忆：近期滑动窗口 + 早期溢出对话自动摘要压缩）
+     * 管理单个会话的历史消息，支持自动摘要归档、清理和线程安全
      */
-    private static class SessionInfo {
+    public static class SessionInfo {
+        private static final int MAX_SUMMARY_CHARS = 1200;
+
         private final String sessionId;
-        // 存储历史消息对：[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
+        // 存储近期滑动窗口消息对：[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
         private final List<Map<String, String>> messageHistory;
+        // 存储滑出窗口的早期对话压缩摘要，避免长对话丢失关键背景（如故障服务名、Pod ID、已排除项）
+        private final StringBuilder historySummary;
+        private int evictedTurnCount;
         private final long createTime;
         private final ReentrantLock lock;
 
         public SessionInfo(String sessionId) {
             this.sessionId = sessionId;
             this.messageHistory = new ArrayList<>();
+            this.historySummary = new StringBuilder();
+            this.evictedTurnCount = 0;
             this.createTime = System.currentTimeMillis();
             this.lock = new ReentrantLock();
         }
 
         /**
          * 添加一对消息（用户问题 + AI回复）
-         * 自动管理历史消息窗口大小
+         * 自动管理历史消息滑动窗口，并将溢出窗口的早期对话压缩为摘要
          */
         public void addMessage(String userQuestion, String aiAnswer) {
             lock.lock();
@@ -446,23 +514,47 @@ public class ChatController {
                 assistantMsg.put("content", aiAnswer);
                 messageHistory.add(assistantMsg);
 
-                // 自动清理：保持最多 MAX_WINDOW_SIZE 对消息
-                // 每对消息包含2条记录（user + assistant）
+                // 分层记忆管理：保持最多 MAX_WINDOW_SIZE 对近期完整消息，超出的最旧对话压缩入 historySummary
                 int maxMessages = MAX_WINDOW_SIZE * 2;
                 while (messageHistory.size() > maxMessages) {
-                    // 成对删除最旧的消息（删除前2条）
-                    messageHistory.remove(0); // 删除最旧的用户消息
-                    if (!messageHistory.isEmpty()) {
-                        messageHistory.remove(0); // 删除对应的AI回复
-                    }
+                    Map<String, String> oldUser = messageHistory.remove(0);
+                    Map<String, String> oldAssistant = !messageHistory.isEmpty() ? messageHistory.remove(0) : Collections.emptyMap();
+                    evictedTurnCount++;
+                    appendCompressedSummary(evictedTurnCount,
+                            oldUser.getOrDefault("content", ""),
+                            oldAssistant.getOrDefault("content", ""));
                 }
 
-                logger.debug("会话 {} 更新历史消息，当前消息对数: {}", 
-                    sessionId, messageHistory.size() / 2);
+                logger.debug("会话 {} 更新历史消息，当前窗口消息对数: {}, 已归档早期轮次: {}",
+                    sessionId, messageHistory.size() / 2, evictedTurnCount);
 
             } finally {
                 lock.unlock();
             }
+        }
+
+        private void appendCompressedSummary(int turnIndex, String question, String answer) {
+            String compactQ = compactText(question, 100);
+            String compactA = compactText(answer, 160);
+            String entry = String.format("- [早期轮次#%d] 用户问: %s | 结论摘要: %s\n", turnIndex, compactQ, compactA);
+            historySummary.append(entry);
+            if (historySummary.length() > MAX_SUMMARY_CHARS) {
+                int cutIndex = historySummary.indexOf("\n", historySummary.length() - MAX_SUMMARY_CHARS);
+                if (cutIndex > 0) {
+                    historySummary.delete(0, cutIndex + 1);
+                } else {
+                    historySummary.delete(0, historySummary.length() - MAX_SUMMARY_CHARS);
+                }
+            }
+        }
+
+        private String compactText(String text, int maxLen) {
+            if (text == null) return "";
+            String singleLine = text.replaceAll("\\s+", " ").trim();
+            if (singleLine.length() <= maxLen) {
+                return singleLine;
+            }
+            return singleLine.substring(0, maxLen) + "...";
         }
 
         /**
@@ -479,20 +571,34 @@ public class ChatController {
         }
 
         /**
-         * 清空历史消息
+         * 获取早期溢出对话的压缩摘要（线程安全）
          */
-        public void clearHistory() {
+        public String getHistorySummary() {
             lock.lock();
             try {
-                messageHistory.clear();
-                logger.info("会话 {} 历史消息已清空", sessionId);
+                return historySummary.toString();
             } finally {
                 lock.unlock();
             }
         }
 
         /**
-         * 获取当前消息对数
+         * 清空历史消息与早期摘要
+         */
+        public void clearHistory() {
+            lock.lock();
+            try {
+                messageHistory.clear();
+                historySummary.setLength(0);
+                evictedTurnCount = 0;
+                logger.info("会话 {} 历史消息与早期摘要已清空", sessionId);
+            } finally {
+                lock.unlock();
+            }
+        }
+
+        /**
+         * 获取当前窗口消息对数
          */
         public int getMessagePairCount() {
             lock.lock();
@@ -541,6 +647,7 @@ public class ChatController {
     public static class SessionInfoResponse {
         private String sessionId;
         private int messagePairCount;
+        private String historySummary;
         private long createTime;
     }
 
